@@ -22,22 +22,22 @@ void workaround_subsribe_about_to_show(AppIndicator *indicator)
 
 void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_name, GVariant *parameters, gpointer user_data)
 {
-    // gchar *parameters_str = g_variant_print (parameters, TRUE);
-    // printf("Signal: %s, params: %s\n", signal_name, parameters_str);
-    // g_free(parameters_str);
+    gchar *parameters_str = g_variant_print (parameters, TRUE);
+    printf("Signal: %s, params: %s\n", signal_name, parameters_str);
+    g_free(parameters_str);
 
-    if (g_strcmp0(signal_name, "ReSync"))
+    if (g_strcmp0(signal_name, "ReSync") == 0)
     {
-        const gchar *to_sync = g_variant_get_string(parameters, NULL); // Why the fuck is this not a string
-        printf("Time to sync %s\n", to_sync);
+        gchar *to_sync = NULL;
+        g_variant_get(parameters, "(s)", &to_sync); // Why the fuck is this not a string
         if (g_strcmp0(to_sync, "libapplication.so"))
         {
-            printf("Time to sync %s\n", signal_name);
+            printf("Time to sync %s\n", to_sync);
             GError *err = NULL;
             GVariant *appindicators = g_dbus_proxy_call_sync(
                 proxy,
                 "SyncOne",
-                g_variant_new("s", "libapplication.so"),
+                g_variant_new("(s)", "libapplication.so"),
                 G_DBUS_CALL_FLAGS_NONE,
                 -1,
                 NULL,
@@ -54,12 +54,13 @@ void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_
             printf("appindicators: %s\n", appindicators_str);
             g_free(appindicators_str);
         }
+        g_free(to_sync);
         
         // Check if it is for "libapplication.so"
         // Send SyncOne method call
         // change id of indicator
     }
-    else if (g_strcmp0(signal_name, "EntryActivated"))
+    else if (g_strcmp0(signal_name, "EntryActivated") == 0)
     {
         // Do we have the id of the indicator
         // is it equal to the one in of parameters?
