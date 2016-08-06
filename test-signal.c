@@ -20,8 +20,15 @@ void workaround_subsribe_about_to_show(AppIndicator *indicator)
     g_signal_connect(rootMenuItem, "about-to-show", G_CALLBACK(on_about_to_show), NULL);
 }
 
+struct panel_entry {
+    gchar* id;
+    void (*on_activate)(gint x, gint y, guint w, guint h);
+};
+
 void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_name, GVariant *parameters, gpointer user_data)
 {
+    struct panel_entry *entry = (struct panel_entry *) user_data;
+
     gchar *parameters_str = g_variant_print (parameters, TRUE);
     printf("Signal: %s, params: %s\n", signal_name, parameters_str);
     g_free(parameters_str);
@@ -29,8 +36,8 @@ void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_
     if (g_strcmp0(signal_name, "ReSync") == 0)
     {
         gchar *to_sync = NULL;
-        g_variant_get(parameters, "(s)", &to_sync); // Why the fuck is this not a string
-        if (g_strcmp0(to_sync, "libapplication.so"))
+        g_variant_get(parameters, "(s)", &to_sync);
+        if (g_strcmp0(to_sync, "libapplication.so") == 0)
         {
             printf("Time to sync %s\n", to_sync);
             GError *err = NULL;
@@ -50,9 +57,26 @@ void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_
                 g_error_free(err);
                 return;
             }
-            gchar *appindicators_str = g_variant_print(appindicators, TRUE);
-            printf("appindicators: %s\n", appindicators_str);
-            g_free(appindicators_str);
+
+            GVariantIter *iter;
+            gchar *signature;
+            gchar *id;
+            gchar *entry_name;
+            g_variant_get(appindicators, "(a(sssusbbusbbi))", &iter);
+            while (g_variant_iter_loop(iter, "(sssusbbusbbi)", &signature, &id, &entry_name, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL))
+            {
+                if (g_strcmp0(signature, "libapplication.so") == 0 && g_strcmp0(entry_name, "testing-123") == 0)
+                {
+                    printf("Entry id: %s\n", id);
+                    if (g_strcmp0(entry->id, id) != 0)
+                    {
+                        // if (entry->id != NULL)
+                        //     g_free(entry->id);
+                        entry->id = g_strdup(id);
+                    }
+                }
+            }
+            g_variant_iter_free(iter);
         }
         g_free(to_sync);
         
@@ -62,6 +86,21 @@ void on_unity_panel_signal(GDBusProxy *proxy, gchar *sender_name, gchar *signal_
     }
     else if (g_strcmp0(signal_name, "EntryActivated") == 0)
     {
+        gchar* panel_id;
+        gchar* entry_id;
+        gint x, y;
+        guint w, h;
+        g_variant_get(parameters, "(ss(iiuu))", &panel_id, &entry_id, &x, &y, &w, &h);
+        printf("Entry activates! Panel: %s, entry id: %s\n", panel_id, entry_id);
+        printf("Entry id: %s\n", entry->id);
+        if (g_strcmp0(panel_id, entry->id) == 0)
+        {
+            printf("Yeey\n");
+            entry->on_activate(x, y, w, h);
+        }
+        printf("Differnece: %d\n", g_strcmp0(panel_id, entry->id));
+        g_free(panel_id);
+        g_free(entry_id);
         // Do we have the id of the indicator
         // is it equal to the one in of parameters?
         // report click and location
@@ -81,7 +120,12 @@ void unity_panel_proxy_ready(GObject *source_object, GAsyncResult *res, gpointer
         return;
     }
 
-    g_signal_connect(unity_panel_proxy, "g-signal", G_CALLBACK(on_unity_panel_signal), NULL);
+    g_signal_connect(unity_panel_proxy, "g-signal", G_CALLBACK(on_unity_panel_signal), user_data);
+}
+
+void on_panel_activate(gint x, gint y, guint w, guint h)
+{
+    printf("Panel activated! x: %d, y: %d, w: %d, h: %d\n", x, y, w, h);
 }
 
 // INCOMPLETE
@@ -90,6 +134,10 @@ void unity_panel_proxy_ready(GObject *source_object, GAsyncResult *res, gpointer
 // https://bugs.launchpad.net/ubuntu/+source/libappindicator/+bug/522152/comments/11
 void workaround_entry_activated()
 {
+    struct panel_entry entry = {
+        NULL,
+        &on_panel_activate
+    };
     g_dbus_proxy_new_for_bus(
         G_BUS_TYPE_SESSION,
         G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES | G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
@@ -99,7 +147,7 @@ void workaround_entry_activated()
         "com.canonical.Unity.Panel.Service",
         NULL,
         unity_panel_proxy_ready,
-        NULL
+        &entry
     );
 }
 
